@@ -1,4 +1,4 @@
-module github.com/vmpartner/go-mq
+module github.com/vmpartner/go-mq/v2
 
 go 1.12
 
