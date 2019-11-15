@@ -28,11 +28,7 @@ func New() (*RabbitMQ, error) {
 	var err error
 
 	if MQ == nil {
-		MQ.Conn, err = Connect()
-		if err != nil {
-			return MQ, err
-		}
-		MQ.Channel, err = MQ.Conn.Channel()
+		MQ, err = ConnectCh()
 		if err != nil {
 			return MQ, err
 		}
@@ -43,7 +39,7 @@ func New() (*RabbitMQ, error) {
 		if MQ.Conn.IsClosed() {
 			MQ.Channel.Close()
 			MQ.Conn.Close()
-			MQ.Conn, err = Connect()
+			MQ, err = ConnectCh()
 			if err != nil {
 				return MQ, err
 			}
@@ -54,7 +50,21 @@ func New() (*RabbitMQ, error) {
 	return MQ, nil
 }
 
-// Connect to DB
+// Connect to Channel
+func ConnectCh() (*RabbitMQ, error) {
+	var err error
+	MQ.Conn, err = Connect()
+	if err != nil {
+		return MQ, err
+	}
+	MQ.Channel, err = MQ.Conn.Channel()
+	if err != nil {
+		return MQ, err
+	}
+	return New()
+}
+
+// Connect to MQ
 func Connect() (*amqp.Connection, error) {
 	conn, err := amqp.Dial(GetLInk())
 	if err != nil {
