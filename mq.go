@@ -53,6 +53,7 @@ func New() (*RabbitMQ, error) {
 // Connect to Channel
 func ConnectCh() (*RabbitMQ, error) {
 	var err error
+	MQ = new(RabbitMQ)
 	MQ.Conn, err = Connect()
 	if err != nil {
 		return MQ, err
