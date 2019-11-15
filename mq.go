@@ -61,7 +61,8 @@ func ConnectCh() (*RabbitMQ, error) {
 	if err != nil {
 		return MQ, err
 	}
-	return New()
+
+	return MQ, err
 }
 
 // Connect to MQ
