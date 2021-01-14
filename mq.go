@@ -3,20 +3,23 @@ package mq
 import (
 	"fmt"
 	"github.com/streadway/amqp"
+	"log"
 	"time"
 )
 
 type Config struct {
-	User           string
-	Pass           string
-	Host           string
-	Port           string
-	PingEachMinute int
+	User               string
+	Pass               string
+	Host               string
+	Port               string
+	PingEachMinute     int
+	ReconnectOnFailure bool
 }
 
 type RabbitMQ struct {
 	conn     *amqp.Connection
 	channel  *amqp.Channel
+	chClose  chan *amqp.Error
 	cfg      Config
 	lastPing time.Time
 }
@@ -26,7 +29,30 @@ func New(cfg Config) (mq *RabbitMQ, err error) {
 		cfg: cfg,
 	}
 	err = mq.connectCh()
+	if cfg.ReconnectOnFailure {
+		mq.reconnectOnFailure()
+	}
 	return
+}
+
+func (mq *RabbitMQ) reconnectOnFailure() {
+	go mq.listenClose()
+	mq.channel.NotifyClose(mq.chClose)
+}
+
+func (mq *RabbitMQ) listenClose() {
+	for {
+		<-mq.chClose
+		log.Println("mq: channel closed")
+		_ = mq.Close()
+		log.Println("mq: reconnect..")
+		err := mq.connectCh()
+		if err != nil {
+			log.Fatal("mq: bad reconnect")
+		}
+		log.Println("mq: reconnect success")
+		continue
+	}
 }
 
 func (mq *RabbitMQ) connectCh() (err error) {
