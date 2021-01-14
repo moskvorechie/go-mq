@@ -1,35 +1,29 @@
 package mq_test
 
 import (
-	"github.com/moskvorechie/go-mq/v2"
+	"github.com/moskvorechie/go-mq/v3"
 	"testing"
 )
 
 func TestNew(t *testing.T) {
-
-	mq.User = "rabbit"
-	mq.Pass = "rabbit"
-	mq.Host = "127.0.0.1"
-	mq.Port = "30401"
-	mq.PingEachMinute = 1
-
-	x, err := mq.New()
+	x, err := mq.New(mq.Config{
+		User:           "rabbit",
+		Pass:           "rabbit",
+		Host:           "127.0.0.1",
+		Port:           "30401",
+		PingEachMinute: 1,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if x.Conn.IsClosed() {
+	if x.GetConn().IsClosed() {
 		t.Fatal("conn closed")
 	}
-
-	mq.Close()
-
-	x, err = mq.New()
+	err = x.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if x.Conn.IsClosed() {
-		t.Fatal("conn closed")
+	if !x.GetConn().IsClosed() {
+		t.Fatal("conn not closed")
 	}
 }

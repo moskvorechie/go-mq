@@ -6,69 +6,66 @@ import (
 	"time"
 )
 
+type Config struct {
+	User           string
+	Pass           string
+	Host           string
+	Port           string
+	PingEachMinute int
+}
+
 type RabbitMQ struct {
-	Conn    *amqp.Connection
-	Channel *amqp.Channel
-	Error   chan *amqp.Error
+	conn     *amqp.Connection
+	channel  *amqp.Channel
+	cfg      Config
+	lastPing time.Time
 }
 
-var MQ *RabbitMQ
-var User string
-var Pass string
-var Host string
-var Port string
-
-var PingEachMinute int
-
-var lastPing time.Time
-
-// Get instance
-func New() (*RabbitMQ, error) {
-
-	var err error
-
-	if MQ == nil {
-		MQ, err = ConnectCh()
-		if err != nil {
-			return MQ, err
-		}
-		return New()
+func New(cfg Config) (mq *RabbitMQ, err error) {
+	mq = &RabbitMQ{
+		cfg: cfg,
 	}
-	if PingEachMinute > 0 && time.Now().After(lastPing.Add(time.Duration(PingEachMinute)*time.Minute)) {
-		lastPing = time.Now()
-		if MQ.Conn.IsClosed() {
-			MQ.Channel.Close()
-			MQ.Conn.Close()
-			MQ, err = ConnectCh()
-			if err != nil {
-				return MQ, err
-			}
-			return New()
-		}
-	}
-
-	return MQ, nil
+	err = mq.connectCh()
+	return
 }
 
-// Connect to Channel
-func ConnectCh() (*RabbitMQ, error) {
-	var err error
-	MQ = new(RabbitMQ)
-	MQ.Conn, err = Connect()
+func (mq *RabbitMQ) connectCh() (err error) {
+	mq.conn, err = mq.connect()
 	if err != nil {
-		return MQ, err
+		return
 	}
-	MQ.Channel, err = MQ.Conn.Channel()
+	mq.channel, err = mq.conn.Channel()
 	if err != nil {
-		return MQ, err
+		return
 	}
 
-	return MQ, err
+	return
 }
 
 // Connect to MQ
-func Connect() (*amqp.Connection, error) {
-	conn, err := amqp.Dial(GetLInk())
+func (mq *RabbitMQ) GetConn() *amqp.Connection {
+	return mq.conn
+}
+
+func (mq *RabbitMQ) GetChan() *amqp.Channel {
+	return mq.channel
+}
+
+func (mq *RabbitMQ) Close() (err error) {
+	err = mq.channel.Close()
+	if err != nil {
+		return
+	}
+	err = mq.conn.Close()
+	if err != nil {
+		return
+	}
+	return
+}
+
+// Connect to MQ
+func (mq *RabbitMQ) connect() (*amqp.Connection, error) {
+	conn, err := amqp.Dial(mq.getLInk())
 	if err != nil {
 		return conn, err
 	}
@@ -77,22 +74,24 @@ func Connect() (*amqp.Connection, error) {
 }
 
 // Format link
-func GetLInk() string {
-	connLink := fmt.Sprintf("amqp://%s:%s@%s:%s/", User, Pass, Host, Port)
+func (mq *RabbitMQ) getLInk() string {
+	connLink := fmt.Sprintf("amqp://%s:%s@%s:%s/", mq.cfg.User, mq.cfg.Pass, mq.cfg.Host, mq.cfg.Port)
 
 	return connLink
 }
 
-func Close() {
-	if !MQ.Conn.IsClosed() {
-		err := MQ.Channel.Close()
-		if err != nil {
-			panic(err)
-		}
-		err = MQ.Conn.Close()
-		if err != nil {
-			panic(err)
+// Restore connection if conn close
+func (mq *RabbitMQ) Up() (err error) {
+	if mq.cfg.PingEachMinute > 0 && time.Now().After(mq.lastPing.Add(time.Duration(mq.cfg.PingEachMinute)*time.Minute)) {
+		mq.lastPing = time.Now()
+		if mq.conn.IsClosed() {
+			_ = mq.channel.Close()
+			_ = mq.conn.Close()
+			err = mq.connectCh()
+			if err != nil {
+				return err
+			}
 		}
 	}
-	MQ = nil
+	return
 }
