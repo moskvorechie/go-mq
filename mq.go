@@ -82,3 +82,17 @@ func GetLInk() string {
 
 	return connLink
 }
+
+func Close() {
+	if !MQ.Conn.IsClosed() {
+		err := MQ.Channel.Close()
+		if err != nil {
+			panic(err)
+		}
+		err = MQ.Conn.Close()
+		if err != nil {
+			panic(err)
+		}
+	}
+	MQ = nil
+}
