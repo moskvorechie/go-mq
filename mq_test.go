@@ -13,17 +13,18 @@ import (
 func TestNew(t *testing.T) {
 
 	mx, err := mq.New(mq.Config{
-		User:           "rabbit",
-		Pass:           "rabbit",
-		Host:           "127.0.0.1",
-		Port:           "30401",
-		PingEachMinute: 1,
+		User:      "rabbit",
+		Pass:      "rabbit",
+		Host:      "127.0.0.1",
+		Port:      "30401",
+		Heartbeat: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ch, err := mx.NewChannel(true)
+	chReconnectOnFailure := make(chan struct{})
+	ch, err := mx.NewChannel(chReconnectOnFailure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,17 +50,18 @@ func TestLong(t *testing.T) {
 
 	chClose := make(chan bool)
 	mx, err := mq.New(mq.Config{
-		User:           "rabbit",
-		Pass:           "rabbit",
-		Host:           "127.0.0.1",
-		Port:           "30401",
-		PingEachMinute: 1,
+		User:      "rabbit",
+		Pass:      "rabbit",
+		Host:      "127.0.0.1",
+		Port:      "30401",
+		Heartbeat: 5 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ch, err := mx.NewChannel(true)
+	chReconnectOnFailure := make(chan struct{})
+	ch, err := mx.NewChannel(chReconnectOnFailure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,16 +88,31 @@ func TestLong(t *testing.T) {
 
 	// Listen 10 messages
 	wg.Add(1)
-	go func(mx *mq.RabbitMQ) {
-		defer wg.Done()
-		ch, err := ch.Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
+	go func(mx *mq.RabbitMQ, ch *amqp.Channel) {
+		defer func() {
+			log.Println("exit listen messages")
+			wg.Done()
+		}()
+
+	reconnect:
+
+		// New connection
+		err := mx.RestoreConnections(ch, chReconnectOnFailure)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		chq, err := ch.Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
+		if err != nil {
+			log.Fatal(err)
+		}
 		for {
 			select {
-			case message, ok := <-ch:
+			case message, ok := <-chq:
 				if !ok {
+					log.Println("bad chan consume")
+					time.Sleep(500 * time.Millisecond)
+					goto reconnect
 					return
 				}
 				log.Println(message.Body)
@@ -109,23 +126,32 @@ func TestLong(t *testing.T) {
 				}
 			}
 		}
-	}(mx)
+	}(mx, ch)
 
 	// Send 10 messages
 	wg.Add(1)
-	go func(mx *mq.RabbitMQ) {
-		defer wg.Done()
+	go func(mx *mq.RabbitMQ, ch *amqp.Channel, chReconnectOnFailure chan struct{}) {
+		defer func() {
+			log.Println("exit send messages")
+			wg.Done()
+		}()
 		total := 0
 		for {
 
 			min := 1
-			max := 30
+			max := 5
 			wait := rand.Intn(max-min) + min
 
 			time.Sleep(time.Duration(wait) * time.Second)
 			total++
-			if total > 1000 {
+			if total > 100 {
 				break
+			}
+
+			// New connection
+			err := mx.RestoreConnections(ch, chReconnectOnFailure)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 			err = ch.Publish("test-go", "test-go", false, false, amqp.Publishing{
@@ -139,7 +165,7 @@ func TestLong(t *testing.T) {
 			}
 		}
 		close(chClose)
-	}(mx)
+	}(mx, ch, chReconnectOnFailure)
 
 	wg.Wait()
 }

@@ -8,11 +8,11 @@ import (
 )
 
 type Config struct {
-	User           string
-	Pass           string
-	Host           string
-	Port           string
-	PingEachMinute int
+	User      string
+	Pass      string
+	Host      string
+	Port      string
+	Heartbeat time.Duration
 }
 
 type RabbitMQ struct {
@@ -30,39 +30,83 @@ func New(cfg Config) (mq *RabbitMQ, err error) {
 	if err != nil {
 		return
 	}
+	if cfg.Heartbeat > 0 {
+		mq.conn.Config.Heartbeat = cfg.Heartbeat
+	}
 	return
 }
 
-func (mq *RabbitMQ) NewChannel(asyncReconnectOnFailure bool) (ch *amqp.Channel, err error) {
-
+// If set chReconnectOnFailure channel will try reconnect on failure
+func (mq *RabbitMQ) NewChannel(chReconnectOnFailure chan struct{}) (ch *amqp.Channel, err error) {
 	ch, err = mq.conn.Channel()
 	if err != nil {
 		return
 	}
-	if asyncReconnectOnFailure {
-		mq.reconnectOnFailure(ch)
+	if chReconnectOnFailure != nil {
+		mq.reconnectChanOnFailure(ch, chReconnectOnFailure)
 	}
 	return
 }
 
-func (mq *RabbitMQ) reconnectOnFailure(ch *amqp.Channel) {
+// Restore connection if conn close
+func (mq *RabbitMQ) RestoreConnections(ch *amqp.Channel, chReconnectOnFailure chan struct{}) (err error) {
+	if !mq.conn.IsClosed() {
+		return
+	}
+	mq.lastPing = time.Now()
+	for k := 1; k <= 10; k++ {
+		time.Sleep(time.Duration(300*k) * time.Millisecond)
+		_ = mq.conn.Close()
+		mq.conn, err = mq.connect()
+		if err != nil {
+			log.Printf("mq: bad conn reconnect, try %d", k)
+			continue
+		}
+		if mq.conn.IsClosed() {
+			log.Fatal("mq: reconnect conn failure 1")
+		}
+		log.Printf("mq: conn reconnect success")
+
+		ch, err = mq.NewChannel(chReconnectOnFailure)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		return
+	}
+	log.Fatal("mq: reconnect conn failure 2")
+	return
+}
+
+func (mq *RabbitMQ) reconnectChanOnFailure(ch *amqp.Channel, chExit chan struct{}) {
 	var err error
 	chNotifyClose := make(chan *amqp.Error)
 	go func(ch *amqp.Channel) {
 		for {
-			<-chNotifyClose
-			log.Println("mq: channel closed")
-			_ = mq.Close()
-			log.Println("mq: reconnect..")
-			ch, err = mq.NewChannel(true)
-			if err != nil {
-				log.Fatal("mq: bad reconnect")
+			select {
+			case <-chNotifyClose:
+				log.Println("mq: chan closed, trying reconnect")
+				_ = mq.Close()
+				log.Println("mq: reconnect chan ...")
+				for k := 1; k <= 10; k++ {
+					time.Sleep(time.Duration(300*k) * time.Millisecond)
+					ch, err = mq.NewChannel(chExit)
+					if err != nil {
+						log.Printf("mq: bad chan reconnect, try %d", k)
+						continue
+					}
+					log.Println("mq: reconnect chan success")
+					return
+				}
+				log.Fatal("mq: reconnect chan failure")
+			case <-chExit:
+				log.Println("mq: reconnect chan exit")
+				return
 			}
-			log.Println("mq: reconnect success")
-			continue
 		}
 	}(ch)
 	ch.NotifyClose(chNotifyClose)
+	return
 }
 
 // Connect to MQ
@@ -93,19 +137,4 @@ func (mq *RabbitMQ) getLInk() string {
 	connLink := fmt.Sprintf("amqp://%s:%s@%s:%s/", mq.cfg.User, mq.cfg.Pass, mq.cfg.Host, mq.cfg.Port)
 
 	return connLink
-}
-
-// Restore connection if conn close
-func (mq *RabbitMQ) Up() (err error) {
-	if mq.cfg.PingEachMinute > 0 && time.Now().After(mq.lastPing.Add(time.Duration(mq.cfg.PingEachMinute)*time.Minute)) {
-		mq.lastPing = time.Now()
-		if mq.conn.IsClosed() {
-			_ = mq.conn.Close()
-			mq.conn, err = mq.connect()
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return
 }
