@@ -8,12 +8,11 @@ import (
 )
 
 type Config struct {
-	User               string
-	Pass               string
-	Host               string
-	Port               string
-	PingEachMinute     int
-	ReconnectOnFailure bool
+	User           string
+	Pass           string
+	Host           string
+	Port           string
+	PingEachMinute int
 }
 
 type RabbitMQ struct {
