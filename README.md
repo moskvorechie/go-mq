@@ -18,15 +18,22 @@ func main() {
 		Host:               "127.0.0.1",
 		Port:               "30401",
 		PingEachMinute:     1,
-		ReconnectOnFailure: true,
 	})
-	ch, err := mx.GetChan().Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
+	defer mx.Close()
+
+	ch, err := mx.NewChannel(true)
+	if err != nil {
+		panic(err)
+	}
+	defer ch.Close()
+
+	chq, err := ch.Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
 	if err != nil {
 		panic(err)
 	}
 	for {
 		select {
-		case message, ok := <-ch:
+		case message, ok := <-chq:
 			if !ok {
 				return
 			}

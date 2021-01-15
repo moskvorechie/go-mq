@@ -11,13 +11,13 @@ import (
 )
 
 func TestNew(t *testing.T) {
+
 	mx, err := mq.New(mq.Config{
-		User:               "rabbit",
-		Pass:               "rabbit",
-		Host:               "127.0.0.1",
-		Port:               "30401",
-		PingEachMinute:     1,
-		ReconnectOnFailure: true,
+		User:           "rabbit",
+		Pass:           "rabbit",
+		Host:           "127.0.0.1",
+		Port:           "30401",
+		PingEachMinute: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,12 +49,11 @@ func TestLong(t *testing.T) {
 
 	chClose := make(chan bool)
 	mx, err := mq.New(mq.Config{
-		User:               "rabbit",
-		Pass:               "rabbit",
-		Host:               "127.0.0.1",
-		Port:               "30401",
-		PingEachMinute:     1,
-		ReconnectOnFailure: true,
+		User:           "rabbit",
+		Pass:           "rabbit",
+		Host:           "127.0.0.1",
+		Port:           "30401",
+		PingEachMinute: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
