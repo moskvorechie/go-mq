@@ -22,6 +22,16 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	ch, err := mx.NewChannel(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ch.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if mx.GetConn().IsClosed() {
 		t.Fatal("conn closed")
 	}
@@ -32,6 +42,7 @@ func TestNew(t *testing.T) {
 	if !mx.GetConn().IsClosed() {
 		t.Fatal("conn not closed")
 	}
+
 }
 
 func TestLong(t *testing.T) {
@@ -45,26 +56,31 @@ func TestLong(t *testing.T) {
 		PingEachMinute:     1,
 		ReconnectOnFailure: true,
 	})
-
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	ch, err := mx.NewChannel(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	wg := sync.WaitGroup{}
 
 	// Create channel
-	err = mx.GetChan().ExchangeDeclare("test-go", "direct", true, false, false, false, amqp.Table{})
+	err = ch.ExchangeDeclare("test-go", "direct", true, false, false, false, amqp.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create queue
-	_, err = mx.GetChan().QueueDeclare("test-go", false, false, false, false, amqp.Table{})
+	_, err = ch.QueueDeclare("test-go", false, false, false, false, amqp.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Bind queue to exchange
-	err = mx.GetChan().QueueBind("test-go", "test-go", "test-go", false, amqp.Table{})
+	err = ch.QueueBind("test-go", "test-go", "test-go", false, amqp.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +89,7 @@ func TestLong(t *testing.T) {
 	wg.Add(1)
 	go func(mx *mq.RabbitMQ) {
 		defer wg.Done()
-		ch, err := mx.GetChan().Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
+		ch, err := ch.Consume("test-go", "test-go", false, false, false, false, amqp.Table{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +129,7 @@ func TestLong(t *testing.T) {
 				break
 			}
 
-			err = mx.GetChan().Publish("test-go", "test-go", false, false, amqp.Publishing{
+			err = ch.Publish("test-go", "test-go", false, false, amqp.Publishing{
 				DeliveryMode: 2,
 				Timestamp:    time.Now(),
 				AppId:        "test-go",
