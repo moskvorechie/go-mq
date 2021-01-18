@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/streadway/amqp"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type RabbitMQ struct {
 	chNotifyClose chan *amqp.Error
 	cfg           Config
 	lastPing      time.Time
+	sync.RWMutex
 }
 
 func New(cfg Config) (mq *RabbitMQ, err error) {
@@ -37,25 +39,25 @@ func New(cfg Config) (mq *RabbitMQ, err error) {
 }
 
 // If set chReconnectOnFailure channel will try reconnect on failure
-func (mq *RabbitMQ) NewChannel(chReconnectOnFailure chan struct{}) (ch *amqp.Channel, err error) {
+func (mq *RabbitMQ) NewChannel() (ch *amqp.Channel, err error) {
 	ch, err = mq.conn.Channel()
 	if err != nil {
-		return
+		return ch, err
 	}
-	if chReconnectOnFailure != nil {
-		mq.reconnectChanOnFailure(ch, chReconnectOnFailure)
-	}
-	return
+	return ch, err
 }
 
 // Restore connection if conn close
-func (mq *RabbitMQ) RestoreConnections(ch *amqp.Channel, chReconnectOnFailure chan struct{}) (err error) {
+func (mq *RabbitMQ) TryRestoreConnections(ch *amqp.Channel) {
+	mq.Lock()
+	defer mq.Unlock()
+	var err error
 	if !mq.conn.IsClosed() {
 		return
 	}
-	mq.lastPing = time.Now()
-	for k := 1; k <= 10; k++ {
-		time.Sleep(time.Duration(300*k) * time.Millisecond)
+	for k := 1; k <= 20; k++ {
+		time.Sleep(time.Duration(500*k) * time.Millisecond)
+		_ = ch.Close()
 		_ = mq.conn.Close()
 		mq.conn, err = mq.connect()
 		if err != nil {
@@ -67,7 +69,7 @@ func (mq *RabbitMQ) RestoreConnections(ch *amqp.Channel, chReconnectOnFailure ch
 		}
 		log.Printf("mq: conn reconnect success")
 
-		ch, err = mq.NewChannel(chReconnectOnFailure)
+		ch, err = mq.NewChannel()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -75,37 +77,6 @@ func (mq *RabbitMQ) RestoreConnections(ch *amqp.Channel, chReconnectOnFailure ch
 		return
 	}
 	log.Fatal("mq: reconnect conn failure 2")
-	return
-}
-
-func (mq *RabbitMQ) reconnectChanOnFailure(ch *amqp.Channel, chExit chan struct{}) {
-	var err error
-	chNotifyClose := make(chan *amqp.Error)
-	go func(ch *amqp.Channel) {
-		for {
-			select {
-			case <-chNotifyClose:
-				log.Println("mq: chan closed, trying reconnect")
-				_ = mq.Close()
-				log.Println("mq: reconnect chan ...")
-				for k := 1; k <= 10; k++ {
-					time.Sleep(time.Duration(300*k) * time.Millisecond)
-					ch, err = mq.NewChannel(chExit)
-					if err != nil {
-						log.Printf("mq: bad chan reconnect, try %d", k)
-						continue
-					}
-					log.Println("mq: reconnect chan success")
-					return
-				}
-				log.Fatal("mq: reconnect chan failure")
-			case <-chExit:
-				log.Println("mq: reconnect chan exit")
-				return
-			}
-		}
-	}(ch)
-	ch.NotifyClose(chNotifyClose)
 	return
 }
 
