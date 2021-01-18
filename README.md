@@ -17,11 +17,10 @@ func main() {
 		Pass:               "rabbit",
 		Host:               "127.0.0.1",
 		Port:               "30401",
-		PingEachMinute:     1,
 	})
 	defer mx.Close()
 
-	ch, err := mx.NewChannel(true)
+	ch, err := mx.NewChannel()
 	if err != nil {
 		panic(err)
 	}
